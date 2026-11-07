@@ -930,13 +930,35 @@ const PRINT_SOURCES = {
   tailored: () => ({ data: state.tailored, editable: false, name: "Currículo", empresa: state.job.empresa }),
   cover: () => ({ data: state.cover, editable: false, name: "Carta", empresa: state.job.empresa }),
 };
-function startDownload(kind) {
+// Word: montado no servidor a partir dos dados (não do HTML), com a mesma aparência
+async function downloadDocx(kind, filename) {
+  const body = kind === "cover"
+    ? { tipo: "carta", curriculo: state.resume, carta: state.cover }
+    : { tipo: "curriculo", curriculo: kind === "tailored" ? state.tailored : state.resume, modelo: state.template, aparencia: state.custom };
+  loading(true, "Gerando arquivo do Word...");
+  try {
+    const res = await fetch("/api/docx", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Erro ${res.status}`);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = filename + ".docx";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast("Arquivo do Word baixado");
+  } catch (e) {
+    toast(`Não deu para gerar o Word: ${e.message}`, true);
+  } finally {
+    loading(false);
+  }
+}
+function startDownload(kind, format = "pdf") {
   const el = $(PRINT_TARGETS[kind]);
   if (el.classList.contains("empty")) return toast("Nada para exportar ainda", true);
   const src = PRINT_SOURCES[kind]();
   const filename = [src.name, state.resume.nome, src.empresa].filter(Boolean).join(" - ").replace(/[\\/:*?"<>|]/g, "");
+  const go = () => (format === "docx" ? downloadDocx(kind, filename) : downloadPdf(el, filename));
   const pending = findPending(src.data);
-  if (!pending.length) return downloadPdf(el, filename);
+  if (!pending.length) return go();
 
   const d = $("#pending-dlg");
   const where = src.editable ? "" : kind === "cover"
@@ -944,7 +966,7 @@ function startDownload(kind) {
     : "Preencha no seu currículo base (aba Currículo) e adapte de novo, ou edite depois de usar como base.";
   d.innerHTML = `
     <h3>Faltam ${pending.length} campo${pending.length > 1 ? "s" : ""} para preencher</h3>
-    <p class="muted">As sugestões deixaram marcadores entre colchetes. Se você baixar agora, eles vão aparecer no PDF. ${where}</p>
+    <p class="muted">As sugestões deixaram marcadores entre colchetes. Se você baixar agora, eles vão aparecer no arquivo. ${where}</p>
     <ul class="pending-list">${pending.map((p, i) => `<li>
       <div><b>${esc(pendingLabel(src.data, p.path))}</b><span>${highlight(p.text)}</span></div>
       ${src.editable ? `<button type="button" class="btn small" data-go="${i}">Preencher</button>` : ""}</li>`).join("")}</ul>
@@ -957,11 +979,12 @@ function startDownload(kind) {
     if (!b) return;
     d.close();
     if (b.dataset.go) focusPending(pending[+b.dataset.go].path);
-    if (b.dataset.act === "anyway") downloadPdf(el, filename);
+    if (b.dataset.act === "anyway") go();
   };
   d.showModal();
 }
 $$("[data-print]").forEach((b) => (b.onclick = () => startDownload(b.dataset.print)));
+$$("[data-docx]").forEach((b) => (b.onclick = () => startDownload(b.dataset.docx, "docx")));
 
 // ---------- candidaturas (kanban) ----------
 const COLS = [["preparacao", "Preparação"], ["enviada", "Enviada"], ["entrevista", "Entrevista"], ["oferta", "Oferta"], ["recusada", "Recusada"]];

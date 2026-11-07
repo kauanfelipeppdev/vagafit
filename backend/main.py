@@ -12,7 +12,7 @@ from pypdf import PdfReader
 
 load_dotenv()
 
-from . import db, matching, pdf, prompts, scoring  # noqa: E402
+from . import db, docx_export, matching, pdf, prompts, scoring  # noqa: E402
 from .llm import LLMError, ask_json  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -66,6 +66,14 @@ class InterviewIn(BaseModel):
     empresa: str = ""
     cargo: str = ""
     refazer: bool = False
+
+
+class DocxIn(BaseModel):
+    tipo: str = "curriculo"  # curriculo | carta
+    curriculo: dict
+    carta: dict | None = None
+    modelo: str = "classico"
+    aparencia: dict = {}
 
 
 class TextIn(BaseModel):
@@ -211,6 +219,22 @@ async def gerar_pdf(body: PdfIn):
         raise HTTPException(413, "Documento grande demais")
     data = await pdf.html_to_pdf(pdf.build_document(body.html, body.classe, body.estilo, body.titulo))
     return Response(data, media_type="application/pdf")
+
+
+# ---------- Word ----------
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@app.post("/api/docx")
+def gerar_docx(body: DocxIn):
+    """Currículo ou carta em .docx, montado a partir dos dados (não do HTML)."""
+    if body.tipo == "carta":
+        if not body.carta:
+            raise HTTPException(422, "Gere a carta primeiro")
+        data = docx_export.cover_docx(body.curriculo, body.carta)
+    else:
+        data = docx_export.resume_docx(body.curriculo, body.modelo, body.aparencia)
+    return Response(data, media_type=DOCX_TYPE)
 
 
 # ---------- candidaturas ----------
