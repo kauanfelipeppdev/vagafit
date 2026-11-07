@@ -233,6 +233,24 @@ details.why summary { cursor: pointer; color: var(--muted); }
 .pending-list span { color: var(--muted); line-height: 1.45; }
 .pending-list mark { background: var(--mark); color: #2d3300; border-radius: 2px; padding: 0 2px; }
 
+/* entrevista */
+.iv-head { margin: 10px 0 6px; }
+.iv-for { margin: 0 0 8px; font-size: .9rem; }
+.iv-stale { color: var(--warn); }
+details.q { border: 1px solid var(--line); border-radius: 10px; margin: 8px 0; background: #fff; }
+details.q summary { cursor: pointer; padding: 12px 14px 12px 36px; font-weight: 500; line-height: 1.45; list-style: none; position: relative; }
+details.q summary::-webkit-details-marker { display: none; }
+details.q summary::before { content: ""; position: absolute; left: 15px; top: 18px; width: 7px; height: 7px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; }
+details.q[open] summary::before { transform: rotate(45deg); top: 16px; }
+details.q[open] summary { border-bottom: 1px solid var(--line-2); }
+.q-body { padding: 10px 16px 14px 36px; font-size: .9rem; line-height: 1.55; }
+.q-body p { margin: 0 0 8px; }
+.q-body blockquote { margin: 10px 0; padding: 10px 14px; border-left: 3px solid var(--accent); background: var(--accent-soft);
+  border-radius: 0 8px 8px 0; color: var(--accent-ink); }
+.q-body .q-warn { padding: 8px 12px; border-radius: 8px; background: #fdf6e9; color: #7a4a06; font-size: .85rem; }
+.q-body mark { background: var(--mark); color: #2d3300; border-radius: 2px; padding: 0 2px; }
+
 /* diálogo */
 .dialog { border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 24px; max-width: 420px; width: calc(100% - 32px);
   color: var(--ink); box-shadow: 0 24px 60px -20px rgba(24,33,29,.35); }

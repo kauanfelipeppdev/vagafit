@@ -181,3 +181,25 @@ def clean_sections(r: dict, secoes) -> list[dict]:
         out.append({"secao": s.get("secao", ""), "nota": s.get("nota"), "diagnostico": s.get("diagnostico", ""),
                     "sugestoes": sugs})
     return out
+
+
+# ---------- respostas de entrevista ----------
+NUM = re.compile(r"\d+(?:[.,]\d+)?")
+# nome próprio/ferramenta: maiúscula no meio da frase, ou com número/símbolo (FastAPI, K8s, C#, Node.js)
+TERM = re.compile(r"(?<![.!?:]\s)(?<!^)\b([A-Z][\w+#.]*[A-Za-z0-9+#](?:[ ][A-Z][\w+#.]*[A-Za-z0-9+#])*)")
+STAR_WORDS = {"Situação", "Tarefa", "Ação", "Resultado", "Situation", "Task", "Action", "Result", "Eu", "I", "Na", "No",
+              "Em", "Com", "Para", "Depois", "Durante", "Quando", "Como", "Também", "Além", "Isso", "Assim"}
+
+
+def guard_answer(text: str, resume_text: str, extra_known: str = "") -> tuple[str, list[str]]:
+    """Troca números que não estão no currículo por [X] e lista nomes próprios/ferramentas desconhecidos."""
+    known_nums = set(NUM.findall(resume_text))
+    text = NUM.sub(lambda m: m.group(0) if m.group(0) in known_nums else "[X]", text)
+    known = (resume_text + " " + extra_known).lower()
+    unknown = []
+    for t in TERM.findall(text):
+        t = t.rstrip(".")
+        if t in STAR_WORDS or t.lower() in known or t in unknown:
+            continue
+        unknown.append(t)
+    return text, unknown

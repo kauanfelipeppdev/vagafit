@@ -66,8 +66,9 @@ const state = {
   cover: store.get("cover", null),
   template: ["classico", "moderno", "compacto"].includes(store.get("template")) ? store.get("template") : "classico",
   custom: loadCustom(store.get("custom", {})),
+  interview: store.get("interview", null),
 };
-const save = () => ["resume", "tailored", "job", "cover", "template", "custom"].forEach((k) => store.set(k, state[k]));
+const save = () => ["resume", "tailored", "job", "cover", "template", "custom", "interview"].forEach((k) => store.set(k, state[k]));
 
 // ---------- utilidades ----------
 function toast(msg, err = false) {
@@ -819,6 +820,54 @@ $("#btn-cover").onclick = async () => {
   save(); renderCover(state.cover);
 };
 
+// ---------- entrevista ----------
+const Q_CATS = [["tecnica", "Técnicas"], ["comportamental", "Comportamentais"], ["curriculo", "Sobre o seu currículo"], ["motivacao", "Motivação e empresa"]];
+const jobLabel = (j) => [j.cargo, j.empresa].filter(Boolean).join(" · ") || "vaga sem nome";
+function renderInterview() {
+  const iv = state.interview;
+  $("#btn-interview-again").classList.toggle("hidden", !iv);
+  if (!iv) return ($("#interview-out").innerHTML = "");
+  const stale = iv.vaga !== (state.job.vaga || "");
+  const d = iv.data;
+  $("#interview-out").innerHTML = `
+    <div class="iv-head">
+      <p class="iv-for">Para <b>${esc(jobLabel(iv))}</b>${stale ? ` <span class="iv-stale">· a vaga mudou desde então; gere de novo para atualizar</span>` : ""}</p>
+      ${d.resumo_da_vaga ? `<p class="verdict-main">${esc(d.resumo_da_vaga)}</p>` : ""}
+      <p class="muted">Tente responder em voz alta antes de abrir a resposta de exemplo. Complete o que estiver entre colchetes com os seus dados.</p>
+    </div>
+    ${Q_CATS.map(([k, label]) => {
+      const qs = d.perguntas.filter((q) => q.categoria === k);
+      return qs.length ? `<h3>${label} <span class="muted">${qs.length}</span></h3>${qs.map((q) => `
+        <details class="q">
+          <summary>${esc(q.pergunta)}</summary>
+          <div class="q-body">
+            ${q.por_que_perguntam ? `<p><b>O que querem avaliar:</b> ${esc(q.por_que_perguntam)}</p>` : ""}
+            ${q.como_responder ? `<p><b>Como responder:</b> ${esc(q.como_responder)}</p>` : ""}
+            ${q.resposta_exemplo ? `<blockquote>${highlight(q.resposta_exemplo)}</blockquote>` : ""}
+            ${q.nao_esta_no_curriculo?.length ? `<p class="q-warn">Cita ${esc(q.nao_esta_no_curriculo.join(", "))}, que não está no seu currículo: só fale se for verdade, ou troque pela sua experiência real.</p>` : ""}
+            ${q.baseada_em ? `<p class="muted">Baseada em: ${esc(q.baseada_em)}</p>` : ""}
+          </div>
+        </details>`).join("")}` : "";
+    }).join("")}
+    ${d.pontos_fracos.length ? `<h3>Pontos que vão notar</h3>${d.pontos_fracos.map((p) =>
+      `<div class="issue"><b>${esc(p.ponto)}</b><br>${esc(p.como_abordar || "")}</div>`).join("")}` : ""}
+    ${d.perguntas_para_fazer.length ? `<h3>Perguntas para você fazer</h3><ul class="out-list">${d.perguntas_para_fazer.map((q) => `<li>${esc(q)}</li>`).join("")}</ul>` : ""}`;
+}
+async function prepareInterview(refazer = false) {
+  if (!requireResume()) return;
+  if ((state.job.vaga || "").length < 80) { toast("Cole a vaga na aba “Adaptar à vaga”", true); return switchTab("adaptar"); }
+  const { empresa = "", cargo = "", vaga } = state.job;
+  const data = await api("/api/entrevista", {
+    body: { curriculo: state.tailored || state.resume, vaga, empresa, cargo, refazer },
+    msg: "Preparando as perguntas da entrevista...",
+  });
+  state.interview = { empresa, cargo, vaga, data };
+  save();
+  renderInterview();
+}
+$("#btn-interview").onclick = () => prepareInterview();
+$("#btn-interview-again").onclick = () => prepareInterview(true);
+
 // ---------- PDF (imprime só o papel, num iframe isolado) ----------
 function printPaper(el) {
   if (el.classList.contains("empty")) return toast("Nada para exportar ainda", true);
@@ -972,7 +1021,7 @@ $("#btn-new-app").onclick = async () => {
 };
 
 // ---------- backup (currículo e aparência ficam no navegador; candidaturas no SQLite) ----------
-const BACKUP_KEYS = ["resume", "tailored", "job", "cover", "template", "custom"];
+const BACKUP_KEYS = ["resume", "tailored", "job", "cover", "template", "custom", "interview"];
 $("#btn-export").onclick = async () => {
   let candidaturas = [];
   try { candidaturas = await api("/api/candidaturas", { silent: true }); } catch {}
@@ -1021,5 +1070,6 @@ renderEditor();
 renderCustomizer();
 renderAllPreviews();
 if (state.cover) renderCover(state.cover);
+renderInterview();
 const flash = store.get("flash", null);
 if (flash) { store.set("flash", null); toast(flash); }

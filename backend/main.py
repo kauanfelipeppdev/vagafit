@@ -60,6 +60,14 @@ class CoverIn(BaseModel):
     tom: str = "profissional"
 
 
+class InterviewIn(BaseModel):
+    curriculo: dict
+    vaga: str
+    empresa: str = ""
+    cargo: str = ""
+    refazer: bool = False
+
+
 class TextIn(BaseModel):
     texto: str
 
@@ -167,6 +175,32 @@ async def carta(body: CoverIn):
         f"VAGA:\n{body.vaga[:8000]}\n\nCURRÍCULO:\n{json.dumps(body.curriculo, ensure_ascii=False)}"
     )
     return await ask_json(prompts.COVER_SYSTEM, user, temperature=0.6, cache=False)
+
+
+# ---------- entrevista ----------
+@app.post("/api/entrevista")
+async def entrevista(body: InterviewIn):
+    if len(body.vaga.strip()) < 80:
+        raise HTTPException(422, "Cole a descrição completa da vaga na aba “Adaptar à vaga”")
+    user = (
+        f"EMPRESA: {body.empresa or '(ver vaga)'}\nCARGO: {body.cargo or '(ver vaga)'}\n\n"
+        f"VAGA:\n{body.vaga[:8000]}\n\nCURRÍCULO:\n{json.dumps(body.curriculo, ensure_ascii=False)}"
+    )
+    ai = await ask_json(prompts.INTERVIEW_SYSTEM, user, temperature=0.5, refresh=body.refazer)
+    cats = ("tecnica", "comportamental", "curriculo", "motivacao")
+    perguntas = [p for p in ai.get("perguntas") or [] if isinstance(p, dict) and p.get("pergunta")]
+    resume_text = json.dumps(body.curriculo, ensure_ascii=False)
+    for p in perguntas:
+        p["categoria"] = p.get("categoria") if p.get("categoria") in cats else "tecnica"
+        p["resposta_exemplo"], p["nao_esta_no_curriculo"] = scoring.guard_answer(
+            str(p.get("resposta_exemplo") or ""), resume_text, body.empresa)
+    return {
+        "resumo_da_vaga": ai.get("resumo_da_vaga", ""),
+        "perguntas": perguntas,
+        "pontos_fracos": [p if isinstance(p, dict) else {"ponto": str(p), "como_abordar": ""}
+                          for p in ai.get("pontos_fracos") or [] if p and (not isinstance(p, dict) or p.get("ponto"))],
+        "perguntas_para_fazer": [q for q in ai.get("perguntas_para_fazer") or [] if isinstance(q, str) and q.strip()],
+    }
 
 
 # ---------- PDF ----------
