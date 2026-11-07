@@ -31,6 +31,10 @@ nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-btn.active { color: var(--ink); background: var(--panel); box-shadow: 0 1px 2px rgba(24,33,29,.08); }
 .nav-btn.active svg { color: var(--accent); }
 .sidebar-foot { margin-top: auto; font-size: .75rem; color: var(--muted); padding: 0 12px; line-height: 1.5; }
+.sidebar-foot p { margin: 0; }
+.backup { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-bottom: 12px; }
+.link-btn { background: none; border: 0; padding: 3px 0; font: inherit; font-size: .84rem; font-weight: 500; color: var(--accent); cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
 
 main { flex: 1; min-width: 0; }
 .tab { display: none; padding: 22px 24px 32px 4px; }
@@ -210,6 +214,11 @@ input[type="color"] { width: 32px; height: 32px; padding: 2px; margin: 0; cursor
 .change.rejected .diff del { background: var(--panel-2); color: var(--ink); }
 .change.rejected .diff del::before { content: "Mantido  "; }
 .change .chips { margin-top: 8px; }
+.flags { margin: 8px 0 4px; padding: 8px 12px; border-radius: 8px; background: #fdf6e9; border: 1px solid #f0dcb4; font-size: .84rem; }
+.flags b { color: var(--warn); }
+.flags ul { margin: 3px 0 0; padding-left: 18px; line-height: 1.5; }
+.flag-note { margin: 4px 0 10px; padding: 10px 12px; border-radius: 8px; background: #fdf6e9; font-size: .88rem; line-height: 1.5; }
+.flag-note b { color: var(--warn); }
 .chip.keep { background: var(--panel-2); color: var(--ink); }
 .chip.gone { background: none; color: var(--bad); text-decoration: line-through; border: 1px dashed #e7b9a3; }
 details.why { margin: 14px 0; font-size: .9rem; }
@@ -253,7 +262,9 @@ details.why summary { cursor: pointer; color: var(--muted); }
   .brand { margin: 0 14px 0 0; }
   nav { flex-direction: row; }
   .nav-btn { white-space: nowrap; }
-  .sidebar-foot { display: none; }
+  .sidebar-foot { margin: 0 0 0 auto; padding: 0 0 0 14px; }
+  .sidebar-foot p { display: none; }
+  .backup { flex-direction: row; gap: 12px; margin: 0; white-space: nowrap; }
   .split { grid-template-columns: 1fr; }
   .preview-col { position: static; }
   .paper-wrap { max-height: none; }

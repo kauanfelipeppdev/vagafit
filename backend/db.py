@@ -62,7 +62,7 @@ def create(data: dict) -> dict:
             """INSERT INTO candidaturas
                (empresa, cargo, link, status, vaga, curriculo, carta, compatibilidade, notas, criado_em, atualizado_em)
                VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (data["empresa"], data["cargo"], data.get("link", ""), data.get("status", "preparacao"),
+            (data["empresa"], data["cargo"], data.get("link", ""), data.get("status") if data.get("status") in STATUSES else "preparacao",
              data.get("vaga", ""), json.dumps(data.get("curriculo")) if data.get("curriculo") else "",
              json.dumps(data.get("carta")) if data.get("carta") else "",
              data.get("compatibilidade"), data.get("notas", ""), now, now),

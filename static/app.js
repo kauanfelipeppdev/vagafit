@@ -60,11 +60,11 @@ const store = {
   set(k, v) { try { localStorage.setItem("vf_" + k, JSON.stringify(v)); } catch {} },
 };
 const state = {
-  resume: { ...EMPTY, ...store.get("resume", {}) },
+  resume: { ...EMPTY, ...(typeof store.get("resume") === "object" ? store.get("resume", {}) : {}) },
   tailored: store.get("tailored", null),
   job: store.get("job", {}),
   cover: store.get("cover", null),
-  template: store.get("template", "classico"),
+  template: ["classico", "moderno", "compacto"].includes(store.get("template")) ? store.get("template") : "classico",
   custom: loadCustom(store.get("custom", {})),
 };
 const save = () => ["resume", "tailored", "job", "cover", "template", "custom"].forEach((k) => store.set(k, state[k]));
@@ -609,6 +609,68 @@ function diffTailored(base, ai) {
   (ai.projetos || []).forEach((p, i) => base.projetos?.[i] && text(`projetos.${i}.descricao`, `Projeto ${p.nome || i + 1}`));
   return ch;
 }
+// ---- detector de exagero: mudança suspeita vem marcada "Verificar" e recusada até a pessoa aceitar ----
+const fold = (s) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const hasTerm = (hay, term) => {
+  const t = fold(term).trim();
+  return !!t && new RegExp(`(?<![a-z0-9])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-z0-9])`).test(hay);
+};
+const numbersIn = (s) => String(s).match(/\d+(?:[.,]\d+)?/g) || [];
+const WEAK_VERBS = ["auxiliei", "ajudei", "apoiei", "participei", "colaborei", "contribui", "acompanhei", "assisti", "dei suporte"];
+const STRONG_VERBS = ["liderei", "conduzi", "coordenei", "gerenciei", "chefiei", "estruturei", "idealizei", "projetei",
+  "arquitetei", "implementei", "desenvolvi", "criei", "construi", "lancei", "automatizei", "otimizei", "defini", "fui responsavel"];
+// termos que viram afirmação: ferramentas/siglas (escritas com maiúscula, número ou símbolo na vaga)
+// e requisitos que a própria IA listou como lacuna. Palavras comuns ("backend", "performance") não contam.
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const ROLE_WORDS = new Set(["backend", "back-end", "back end", "frontend", "front-end", "front end", "full stack", "fullstack",
+  "full-stack", "mobile", "web", "software", "dados", "sistemas", "ti", "junior", "pleno", "senior", "estagio", "estagiario"]);
+function claimTerms(keywords, vaga = "", lacunas = []) {
+  const gaps = fold(lacunas.join(" "));
+  return keywords.filter((k) => {
+    if (ROLE_WORDS.has(fold(k).trim())) return false;
+    if (hasTerm(gaps, k)) return true;
+    const m = vaga.match(new RegExp(`(^|[^\\p{L}\\d])(${escRe(k)})(?![\\p{L}\\d])`, "iu"));
+    if (!m) return /[A-Z0-9+#./]/.test(k);
+    const w = m[2];
+    const before = vaga.slice(0, m.index + m[1].length).trimEnd();
+    const sentenceStart = !before || /[.!?\n•\-–]$/.test(before); // depois de ":" costuma vir lista de ferramentas
+    return /[0-9+#./]/.test(w) || /[A-Z]/.test(w.slice(1)) || (/^[A-Z]/.test(w) && !sentenceStart);
+  });
+}
+// conceitos que a IA gosta de enfiar no texto (radical, sem acento): só valem se já estiverem no currículo
+const CONCEPTS = [
+  [/micro-?s?servi/, "microsserviços"], [/mensageria/, "mensageria"], [/observabilidade/, "observabilidade"],
+  [/entrega continua|integracao continua|deploy continuo|ci\/cd/, "CI/CD"], [/devops/, "DevOps"],
+  [/testes (automatizados|unitarios|de integracao)|\btdd\b/, "testes automatizados"], [/alta disponibilidade/, "alta disponibilidade"],
+  [/alto volume/, "alto volume"], [/escalave|escalabilidade/, "escalabilidade"], [/lideranca|liderei|lideran/, "liderança"],
+  [/mentoria|mentorei/, "mentoria"], [/arquitet/, "arquitetura"], [/machine learning|inteligencia artificial/, "IA/ML"],
+];
+const newConcepts = (para, baseText) => CONCEPTS.filter(([re]) => re.test(fold(para)) && !re.test(baseText)).map(([, label]) => label);
+function flagChanges(changes, base, keywords = []) {
+  const baseText = fold(JSON.stringify(base));
+  const baseNums = new Set(numbersIn(JSON.stringify(base)));
+  for (const c of changes) {
+    const why = [];
+    const para = c.kind === "skills" ? "" : c.para;
+    const newNums = [...new Set(numbersIn(para))].filter((n) => !baseNums.has(n));
+    if (newNums.length) why.push(`Número que não está no seu currículo: ${newNums.join(", ")}`);
+    const novos = [...new Set([...keywords.filter((k) => hasTerm(fold(para), k) && !hasTerm(baseText, k)), ...newConcepts(para, baseText)])];
+    if (novos.length) why.push(`Cita ${novos.join(", ")}, que não aparece${novos.length > 1 ? "m" : ""} no seu currículo`);
+    if (c.kind === "skills") {
+      const sem = c.para.filter((s) => !c.de.some((d) => norm(d) === norm(s)) && !hasTerm(baseText, s));
+      if (sem.length) why.push(`Habilidade${sem.length > 1 ? "s" : ""} sem comprovação: ${sem.join(", ")}`);
+    }
+    const de = fold(c.de || "").trim(), pa = fold(para).trim();
+    if (WEAK_VERBS.some((v) => de.startsWith(v)) && STRONG_VERBS.some((v) => pa.startsWith(v)))
+      why.push("Aumenta sua participação (de apoio para protagonismo)");
+    if (c.kind === "text" && c.path === "titulo") why.push("Troca o cargo que você declara: só aceite se for verdade");
+    if (c.kind === "bullet" && !c.de) why.push("Conquista nova, que não existia no original");
+    c.flags = why;
+    c.ok = !why.length;
+  }
+  return changes;
+}
+
 function buildTailored(ai, changes, base) {
   const out = structuredClone(ai);
   for (const c of changes) {
@@ -642,14 +704,17 @@ function renderChange(c, i) {
   } else {
     body = `<div class="diff">${c.de ? `<del>${esc(c.de)}</del>` : ""}${c.para ? `<ins>${highlight(c.para)}</ins>` : ""}</div>`;
   }
-  return `<div class="change${c.ok ? "" : " rejected"}">
+  const flags = c.flags?.length
+    ? `<div class="flags"><b>Verificar</b><ul>${c.flags.map((f) => `<li>${esc(f)}</li>`).join("")}</ul></div>` : "";
+  return `<div class="change${c.ok ? "" : " rejected"}${c.flags?.length ? " flagged" : ""}">
     <div class="change-head"><span><b>${esc(c.label)}</b> · ${kind}</span>
       <div class="seg"><button type="button" data-ch="${i}" data-ok="1" class="${c.ok ? "on" : ""}">Aceitar</button><button type="button" data-ch="${i}" data-ok="0" class="${c.ok ? "" : "on"}">Recusar</button></div></div>
-    ${body}</div>`;
+    ${flags}${body}</div>`;
 }
 
 function renderTailorResult(t) {
   const accepted = t.changes.filter((c) => c.ok).length;
+  const flagged = t.changes.filter((c) => c.flags?.length).length;
   $("#tailor-out").innerHTML = `
     <div class="match">
       <div>Antes<strong style="color:${color(t.antes.percentual)}">${t.antes.percentual}%</strong></div>
@@ -663,6 +728,7 @@ function renderTailorResult(t) {
       <h3>Mudanças sugeridas <span class="muted">${accepted} de ${t.changes.length} aceitas</span></h3>
       ${t.changes.length ? `<div class="row"><button class="btn small" data-all="1">Aceitar todas</button><button class="btn small" data-all="0">Recusar todas</button></div>` : ""}
     </div>
+    ${flagged ? `<p class="flag-note"><b>${flagged} mudança${flagged > 1 ? "s" : ""} marcada${flagged > 1 ? "s" : ""} para verificar</b> e deixada${flagged > 1 ? "s" : ""} de fora: podem afirmar algo que não está no seu currículo. Aceite só o que for verdade.</p>` : ""}
     <p class="muted">Recuse o que exagerar ou não for verdade. A pré-visualização e a compatibilidade se atualizam na hora.</p>
     ${t.changes.map(renderChange).join("") || `<p class="muted">A IA não mudou nenhum texto.</p>`}
     ${t.mudancas?.length ? `<details class="why"><summary>Por que a IA mudou</summary><ul class="out-list">${t.mudancas.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}
@@ -700,7 +766,7 @@ $("#btn-tailor").onclick = async () => {
     msg: "Adaptando seu currículo à vaga...",
   });
   t.base = structuredClone(state.resume);
-  t.changes = diffTailored(t.base, t.curriculo);
+  t.changes = flagChanges(diffTailored(t.base, t.curriculo), t.base, claimTerms(t.palavras_chave || [], state.job.vaga, t.lacunas || []));
   state.lastTailor = t;
   state.tailored = buildTailored(t.curriculo, t.changes, t.base);
   save();
@@ -902,8 +968,55 @@ $("#btn-new-app").onclick = async () => {
   await api("/api/candidaturas", { body: { empresa, cargo }, silent: true }); loadApps();
 };
 
+// ---------- backup (currículo e aparência ficam no navegador; candidaturas no SQLite) ----------
+const BACKUP_KEYS = ["resume", "tailored", "job", "cover", "template", "custom"];
+$("#btn-export").onclick = async () => {
+  let candidaturas = [];
+  try { candidaturas = await api("/api/candidaturas", { silent: true }); } catch {}
+  const data = { app: "vagafit", versao: 1, exportado_em: new Date().toISOString(),
+    dados: Object.fromEntries(BACKUP_KEYS.map((k) => [k, state[k]])), candidaturas };
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+  a.download = `vagafit-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  toast(`Backup exportado: currículo, aparência e ${candidaturas.length} candidatura${candidaturas.length === 1 ? "" : "s"}`);
+};
+$("#btn-import").onclick = () => $("#backup-input").click();
+$("#backup-input").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = ""; // permite escolher o mesmo arquivo de novo
+  if (file) await importBackup(file);
+};
+async function importBackup(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { return toast("Esse arquivo não é um JSON válido", true); }
+  if (data?.app !== "vagafit" || typeof data.dados !== "object" || !data.dados) return toast("Esse arquivo não é um backup do VagaFit", true);
+  const apps = Array.isArray(data.candidaturas) ? data.candidaturas.filter((a) => a?.empresa && a?.cargo) : [];
+  const when = new Date(data.exportado_em).toLocaleString("pt-BR");
+  if (!confirm(`Restaurar o backup de ${when}?\n\nSeu currículo, aparência, vaga e carta atuais serão substituídos.`
+    + (apps.length ? `\n${apps.length} candidatura(s) serão adicionadas; as que você já tem são ignoradas.` : ""))) return;
+
+  for (const k of BACKUP_KEYS) if (k in data.dados) store.set(k, data.dados[k]);
+  let added = 0;
+  if (apps.length) {
+    const key = (a) => [a.empresa, a.cargo, a.link || ""].map(norm).join("|");
+    const have = new Set((await api("/api/candidaturas", { silent: true }).catch(() => [])).map(key));
+    for (const { id, criado_em, atualizado_em, ...a } of apps) {
+      if (have.has(key(a))) continue;
+      await api("/api/candidaturas", { body: a, silent: true });
+      have.add(key(a));
+      added++;
+    }
+  }
+  store.set("flash", `Backup restaurado${apps.length ? ` (${added} candidatura${added === 1 ? "" : "s"} nova${added === 1 ? "" : "s"})` : ""}`);
+  location.reload();
+}
+
 // ---------- init ----------
 renderEditor();
 renderCustomizer();
 renderAllPreviews();
 if (state.cover) renderCover(state.cover);
+const flash = store.get("flash", null);
+if (flash) { store.set("flash", null); toast(flash); }
