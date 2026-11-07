@@ -1,10 +1,13 @@
 """Cliente mínimo para a API da Groq (compatível com OpenAI), sempre pedindo JSON."""
 import asyncio
+import hashlib
 import json
 import os
 import re
 
 import httpx
+
+from . import db
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-oss-120b"
@@ -14,13 +17,20 @@ class LLMError(Exception):
     pass
 
 
-async def ask_json(system: str, user: str, temperature: float = 0.3) -> dict:
+async def ask_json(system: str, user: str, temperature: float = 0.3, cache: bool = True, refresh: bool = False) -> dict:
+    """cache: reaproveita a resposta para a mesma entrada (economiza o limite de tokens da Groq).
+    refresh: ignora o que está guardado e pede uma resposta nova (botão "gerar de novo")."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise LLMError("GROQ_API_KEY não configurada (veja .env.example)")
 
+    model = os.getenv("GROQ_MODEL") or DEFAULT_MODEL
+    key = hashlib.sha256(json.dumps([model, temperature, system, user], ensure_ascii=False).encode()).hexdigest()
+    if cache and not refresh and (hit := db.cache_get(key)) is not None:
+        return hit
+
     payload = {
-        "model": os.getenv("GROQ_MODEL") or DEFAULT_MODEL,
+        "model": model,
         "temperature": temperature,
         "response_format": {"type": "json_object"},
         "messages": [
@@ -50,6 +60,9 @@ async def ask_json(system: str, user: str, temperature: float = 0.3) -> dict:
 
     content = r.json()["choices"][0]["message"]["content"]
     try:
-        return json.loads(content)
+        data = json.loads(content)
     except json.JSONDecodeError as e:
         raise LLMError(f"Resposta da IA não é JSON válido: {e}") from e
+    if cache:
+        db.cache_set(key, data)
+    return data

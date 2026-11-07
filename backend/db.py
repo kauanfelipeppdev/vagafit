@@ -2,7 +2,7 @@
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "vagafit.db"
@@ -36,6 +36,13 @@ def init():
             notas TEXT DEFAULT '',
             criado_em TEXT,
             atualizado_em TEXT
+        )""")
+        # respostas da IA por hash da entrada (mesmo currículo + mesma vaga = mesma resposta, sem gastar tokens)
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS llm_cache (
+            chave TEXT PRIMARY KEY,
+            resposta TEXT NOT NULL,
+            criado_em TEXT NOT NULL
         )""")
 
 
@@ -91,3 +98,21 @@ def delete(id_: int) -> bool:
     with conn() as c:
         cur = c.execute("DELETE FROM candidaturas WHERE id=?", (id_,))
     return cur.rowcount > 0
+
+
+CACHE_DAYS = 14
+
+
+def cache_get(key: str) -> dict | None:
+    limit = (datetime.now(timezone.utc) - timedelta(days=CACHE_DAYS)).isoformat()
+    with conn() as c:
+        row = c.execute("SELECT resposta FROM llm_cache WHERE chave=? AND criado_em>=?", (key, limit)).fetchone()
+    return json.loads(row["resposta"]) if row else None
+
+
+def cache_set(key: str, value: dict) -> None:
+    now = datetime.now(timezone.utc)
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO llm_cache (chave, resposta, criado_em) VALUES (?,?,?)",
+                  (key, json.dumps(value, ensure_ascii=False), now.isoformat()))
+        c.execute("DELETE FROM llm_cache WHERE criado_em<?", ((now - timedelta(days=CACHE_DAYS)).isoformat(),))

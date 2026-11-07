@@ -35,6 +35,7 @@ async def pdf_error(_req: Request, exc: pdf.PdfError):
 # ---------- modelos ----------
 class ResumeIn(BaseModel):
     curriculo: dict
+    refazer: bool = False  # ignora o cache e pede outra resposta à IA
 
 
 class TailorIn(BaseModel):
@@ -42,6 +43,7 @@ class TailorIn(BaseModel):
     vaga: str
     pais: str = "br"
     palavras_chave: list[str] | None = None  # recalcular % com as palavras que a IA já extraiu
+    refazer: bool = False
 
 
 class PdfIn(BaseModel):
@@ -111,7 +113,7 @@ async def nota(body: ResumeIn):
         "PROBLEMAS JÁ DETECTADOS AUTOMATICAMENTE (não repita, vá além):\n"
         + ("\n".join(f"- {i['secao']}: {i['problema']}" for i in issues) or "- nenhum")
     )
-    ai = await ask_json(prompts.SCORE_SYSTEM, user, temperature=0.2)
+    ai = await ask_json(prompts.SCORE_SYSTEM, user, temperature=0.2, refresh=body.refazer)
     criterios = ai.get("criterios") if isinstance(ai.get("criterios"), dict) else {}
     criterios = {k: criterios.get(k) for k in scoring.WEIGHTS}
     return {
@@ -137,7 +139,7 @@ async def adaptar(body: TailorIn):
         f"VAGA:\n{body.vaga[:8000]}\n\n"
         f"CURRÍCULO (JSON):\n{json.dumps(body.curriculo, ensure_ascii=False)}"
     )
-    ai = await ask_json(prompts.TAILOR_SYSTEM, user, temperature=0.4)
+    ai = await ask_json(prompts.TAILOR_SYSTEM, user, temperature=0.4, refresh=body.refazer)
 
     keywords = ai.get("palavras_chave_vaga") or matching.extract_keywords_fallback(body.vaga)
     adaptado = matching.enforce_facts(body.curriculo, ai.get("curriculo") or body.curriculo)
@@ -164,7 +166,7 @@ async def carta(body: CoverIn):
         f"TOM: {body.tom}\nEMPRESA: {body.empresa or '(ver vaga)'}\n\n"
         f"VAGA:\n{body.vaga[:8000]}\n\nCURRÍCULO:\n{json.dumps(body.curriculo, ensure_ascii=False)}"
     )
-    return await ask_json(prompts.COVER_SYSTEM, user, temperature=0.6)
+    return await ask_json(prompts.COVER_SYSTEM, user, temperature=0.6, cache=False)
 
 
 # ---------- PDF ----------

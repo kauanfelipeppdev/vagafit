@@ -733,8 +733,10 @@ function renderTailorResult(t) {
     ${t.changes.map(renderChange).join("") || `<p class="muted">A IA não mudou nenhum texto.</p>`}
     ${t.mudancas?.length ? `<details class="why"><summary>Por que a IA mudou</summary><ul class="out-list">${t.mudancas.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}
     <div class="row"><button class="btn" id="btn-save-app">Salvar em Candidaturas</button>
-    <button class="btn ghost" id="btn-use-base">Usar como currículo base</button></div>`;
+    <button class="btn ghost" id="btn-use-base">Usar como currículo base</button>
+    <button class="btn ghost" id="btn-retailor" title="A mesma vaga e o mesmo currículo reaproveitam a última resposta; isto pede uma nova à IA">Gerar outra versão</button></div>`;
   $("#btn-save-app").onclick = saveApplication;
+  $("#btn-retailor").onclick = () => tailor(true);
   $("#btn-use-base").onclick = () => { if (confirm("Substituir seu currículo base pela versão adaptada (só as mudanças aceitas)?")) { loadResume(structuredClone(state.tailored)); toast("Currículo base atualizado"); } };
 }
 const refreshMatch = debounce(async (t) => {
@@ -759,11 +761,11 @@ $("#tailor-out").addEventListener("click", (e) => {
   else return;
   updateTailored(t);
 });
-$("#btn-tailor").onclick = async () => {
+async function tailor(refazer = false) {
   if (!requireResume()) return;
   const t = await api("/api/adaptar", {
-    body: { curriculo: state.resume, vaga: state.job.vaga || "", pais: state.job.pais || "br" },
-    msg: "Adaptando seu currículo à vaga...",
+    body: { curriculo: state.resume, vaga: state.job.vaga || "", pais: state.job.pais || "br", refazer },
+    msg: refazer ? "Gerando outra versão..." : "Adaptando seu currículo à vaga...",
   });
   t.base = structuredClone(state.resume);
   t.changes = flagChanges(diffTailored(t.base, t.curriculo), t.base, claimTerms(t.palavras_chave || [], state.job.vaga, t.lacunas || []));
@@ -772,7 +774,8 @@ $("#btn-tailor").onclick = async () => {
   save();
   renderResume(state.tailored, $("#preview-tailored"));
   renderTailorResult(t);
-};
+}
+$("#btn-tailor").onclick = () => tailor();
 
 async function saveApplication() {
   const { empresa, cargo, link, vaga } = state.job;
