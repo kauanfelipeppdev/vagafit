@@ -1,0 +1,74 @@
+/* Modelos de currículo — todos em coluna única (mais seguro para ATS).
+   A aba "Aparência" sobrescreve via variáveis --r-* no próprio .paper:
+   --r-accent, --r-font, --r-scale, --r-lh, --r-pad, --r-marker */
+.paper { --base: 10pt; --acc: var(--r-accent, #1f2328);
+  width: 210mm; min-height: 297mm; background: #fff; padding: var(--r-pad, 16mm 17mm);
+  box-shadow: 0 1px 2px rgba(24,33,29,.06), 0 12px 32px -8px rgba(24,33,29,.18);
+  font-family: var(--r-font, Inter, Arial, sans-serif); font-size: calc(var(--base) * var(--r-scale, 1));
+  line-height: var(--r-lh, 1.42); color: #1f2328; margin: 0 auto; }
+.paper h1 { font-size: 2.1em; margin: 0; line-height: 1.15; color: var(--acc); }
+.paper .r-title { font-size: 1.15em; margin-top: 2px; }
+.paper .r-contact { font-size: .9em; color: #555; margin-top: 6px; }
+.paper h2 { font-size: 1.05em; text-transform: uppercase; letter-spacing: .08em; margin: 1.6em 0 .6em; color: var(--acc); }
+.paper .r-item { margin-bottom: .9em; break-inside: avoid; }
+.paper .r-item-head { display: flex; justify-content: space-between; gap: 10px; }
+.paper .r-item-head b { font-weight: 600; }
+.paper .r-dates { color: #666; white-space: nowrap; font-size: .9em; }
+.paper .r-sub { color: #444; font-style: italic; }
+.paper ul { list-style: none; margin: 3px 0 0; padding: 0; }
+.paper li { position: relative; padding-left: 1.15em; margin: 1px 0; }
+.paper li::before { content: var(--r-marker, "•"); position: absolute; left: .1em; color: var(--acc); }
+.paper.mk-none li { padding-left: 0; }
+.paper.mk-none li::before { content: none; }
+.paper p { margin: 0; }
+
+/* listas com separador configurável */
+.paper .r-sep { color: #a3a3a3; }
+.paper .r-lines > span { display: block; }
+.paper .r-skills { display: flex; flex-wrap: wrap; gap: 4px; }
+.paper .r-skills span { background: color-mix(in srgb, var(--acc) 10%, #fff); color: var(--acc);
+  border-radius: 4px; padding: 1px 7px; font-size: .9em; }
+
+/* opções globais */
+.paper.hdr-center header { text-align: center; }
+.paper.hdr-left header { text-align: left; }
+.paper.titles-normal h2 { text-transform: none; letter-spacing: .01em; font-size: 1.15em; }
+
+/* Clássico: serifado, cabeçalho centralizado, linhas finas */
+.tpl-classico { --base: 10.5pt; font-family: var(--r-font, "Source Serif 4", Georgia, serif); }
+.tpl-classico header { text-align: center; border-bottom: 1px solid var(--acc); padding-bottom: 10px; }
+.tpl-classico h2 { border-bottom: 1px solid #ccc; padding-bottom: 2px; letter-spacing: .12em; }
+
+/* Moderno: cor de destaque, barra lateral nos títulos */
+.tpl-moderno { --acc: var(--r-accent, #4338ca); }
+.tpl-moderno h1 { font-size: 2.3em; }
+.tpl-moderno .r-title { color: #555; font-weight: 500; }
+.tpl-moderno h2 { border-left: 3px solid var(--acc); padding-left: 8px; letter-spacing: .05em; }
+
+/* Compacto: cabe mais em 1 página */
+.tpl-compacto { --base: 9pt; --acc: var(--r-accent, #111); padding: var(--r-pad, 11mm 13mm); line-height: var(--r-lh, 1.3); }
+.tpl-compacto h1 { font-size: 1.9em; }
+.tpl-compacto header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px;
+  border-bottom: 2px solid var(--acc); padding-bottom: 6px; }
+.tpl-compacto .r-contact { text-align: right; margin: 0; }
+.tpl-compacto.hdr-center header { flex-direction: column; align-items: center; }
+.tpl-compacto.hdr-center .r-contact { text-align: center; }
+.tpl-compacto h2 { margin: 1.1em 0 .45em; font-size: 1.05em; background: color-mix(in srgb, var(--acc) 9%, #fff); padding: 2px 6px; }
+.tpl-compacto .r-item { margin-bottom: .65em; }
+
+/* Carta */
+.letter { font-family: "Source Serif 4", Georgia, serif; font-size: 11pt; line-height: 1.6; }
+.letter header { margin-bottom: 28px; }
+.letter .r-contact span:not(:last-child)::after { content: "  •  "; color: #bbb; }
+.letter p { margin: 0 0 12px; }
+.letter [contenteditable]:focus { outline: 1px dashed #8fbfae; }
+
+/* marcador "[X%]" a preencher: grifado só na tela */
+.paper mark.r-ph { background: #eaf56f; color: inherit; border-radius: 2px; padding: 0 1px; }
+
+@media print {
+  @page { size: A4; margin: 0; }
+  body { margin: 0; }
+  .paper { box-shadow: none; margin: 0; }
+  .paper mark.r-ph { background: none; }
+}
