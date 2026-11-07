@@ -172,6 +172,8 @@
           <h1>Candidaturas</h1>
           <button class="btn" id="btn-new-app">+ Nova candidatura</button>
         </div>
+        <p class="muted">Arraste os cartões entre as etapas. Clique num cartão para ver detalhes, notas e a data de envio.</p>
+        <div class="app-stats" id="app-stats"></div>
         <div class="kanban" id="kanban"></div>
       </div>
     </section>
@@ -188,6 +190,7 @@
     </div>
   </dialog>
   <dialog id="pending-dlg" class="dialog wide"></dialog>
+  <dialog id="app-dlg" class="dialog wide"></dialog>
   <div id="toast" class="toast" role="status"></div>
   <div id="loading" class="loading hidden"><div class="spinner"></div><p id="loading-msg">Pensando...</p></div>
   <script src="/static/app.js"></script>

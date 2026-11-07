@@ -37,6 +37,10 @@ def init():
             criado_em TEXT,
             atualizado_em TEXT
         )""")
+        # migração: data de envio (para lembrete de follow-up)
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(candidaturas)")}
+        if "enviada_em" not in cols:
+            c.execute("ALTER TABLE candidaturas ADD COLUMN enviada_em TEXT DEFAULT ''")
         # respostas da IA por hash da entrada (mesmo currículo + mesma vaga = mesma resposta, sem gastar tokens)
         c.execute("""
         CREATE TABLE IF NOT EXISTS llm_cache (
@@ -64,25 +68,33 @@ def list_all() -> list[dict]:
 
 def create(data: dict) -> dict:
     now = datetime.now(timezone.utc).isoformat()
+    status = data.get("status") if data.get("status") in STATUSES else "preparacao"
+    enviada_em = data.get("enviada_em") or ("" if status == "preparacao" else datetime.now().date().isoformat())
     with conn() as c:
         cur = c.execute(
             """INSERT INTO candidaturas
-               (empresa, cargo, link, status, vaga, curriculo, carta, compatibilidade, notas, criado_em, atualizado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-            (data["empresa"], data["cargo"], data.get("link", ""), data.get("status") if data.get("status") in STATUSES else "preparacao",
+               (empresa, cargo, link, status, vaga, curriculo, carta, compatibilidade, notas, criado_em, atualizado_em, enviada_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (data["empresa"], data["cargo"], data.get("link", ""), status,
              data.get("vaga", ""), json.dumps(data.get("curriculo")) if data.get("curriculo") else "",
              json.dumps(data.get("carta")) if data.get("carta") else "",
-             data.get("compatibilidade"), data.get("notas", ""), now, now),
+             data.get("compatibilidade"), data.get("notas", ""), now, now, enviada_em),
         )
         row = c.execute("SELECT * FROM candidaturas WHERE id=?", (cur.lastrowid,)).fetchone()
     return _row(row)
 
 
 def update(id_: int, data: dict) -> dict | None:
-    allowed = {"empresa", "cargo", "link", "status", "vaga", "notas", "compatibilidade", "curriculo", "carta"}
+    allowed = {"empresa", "cargo", "link", "status", "vaga", "notas", "compatibilidade", "curriculo", "carta", "enviada_em"}
     fields = {k: v for k, v in data.items() if k in allowed}
     if "status" in fields and fields["status"] not in STATUSES:
         raise ValueError("status inválido")
+    if fields.get("status", "preparacao") != "preparacao" and "enviada_em" not in fields:
+        # saiu de "preparação" pela primeira vez: registra a data de envio (AAAA-MM-DD)
+        with conn() as c:
+            row = c.execute("SELECT enviada_em FROM candidaturas WHERE id=?", (id_,)).fetchone()
+        if row and not row["enviada_em"]:
+            fields["enviada_em"] = datetime.now().date().isoformat()  # data local de quem usa
     for k in ("curriculo", "carta"):
         if k in fields and not isinstance(fields[k], str):
             fields[k] = json.dumps(fields[k])

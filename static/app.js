@@ -965,20 +965,51 @@ $$("[data-print]").forEach((b) => (b.onclick = () => startDownload(b.dataset.pri
 
 // ---------- candidaturas (kanban) ----------
 const COLS = [["preparacao", "Preparação"], ["enviada", "Enviada"], ["entrevista", "Entrevista"], ["oferta", "Oferta"], ["recusada", "Recusada"]];
+const FOLLOW_UP_DAYS = 7;
 let apps = [];
 async function loadApps() {
   try { apps = await api("/api/candidaturas", { silent: true }); } catch { apps = []; }
   renderKanban();
 }
+// dias de calendário entre a data (AAAA-MM-DD) e hoje
+const daysSince = (iso) => {
+  if (!iso) return null;
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  const now = new Date();
+  return Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(y, m - 1, d)) / 864e5);
+};
+const fmtDate = (iso) => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("pt-BR", { day: "numeric", month: "short" }) : "");
+const needsFollowUp = (a) => a.status === "enviada" && daysSince(a.enviada_em) >= FOLLOW_UP_DAYS;
+
+function renderStats() {
+  const sent = apps.filter((a) => a.status !== "preparacao").length;
+  const interviews = apps.filter((a) => ["entrevista", "oferta"].includes(a.status)).length;
+  const offers = apps.filter((a) => a.status === "oferta").length;
+  const follow = apps.filter(needsFollowUp).length;
+  const pct = (n) => (sent ? `${Math.round((100 * n) / sent)}%` : "–");
+  $("#app-stats").innerHTML = !apps.length ? "" : `
+    <div><b>${sent}</b><span>enviadas</span></div>
+    <div><b>${interviews}</b><span>entrevistas · ${pct(interviews)} das enviadas</span></div>
+    <div><b>${offers}</b><span>ofertas</span></div>
+    ${follow ? `<div class="warn"><b>${follow}</b><span>sem resposta há ${FOLLOW_UP_DAYS}+ dias</span></div>` : ""}`;
+}
 function renderKanban() {
+  renderStats();
   $("#kanban").innerHTML = COLS.map(([k, label]) => {
     const items = apps.filter((a) => a.status === k);
     return `<div class="col" data-status="${k}"><h4>${label}<span>${items.length}</span></h4>
-      ${items.map((a) => `<div class="app-card" draggable="true" data-id="${a.id}">
-        <strong>${esc(a.cargo)}</strong>${esc(a.empresa)}
-        <div class="meta">${a.compatibilidade != null ? `<span class="pill">${a.compatibilidade}%</span>` : "<span></span>"}
-          <span>${a.link ? `<a href="${esc(a.link)}" target="_blank" rel="noopener">vaga</a> · ` : ""}<a href="#" data-open="${a.id}">abrir</a> · <a href="#" data-rm="${a.id}">×</a></span></div>
-      </div>`).join("")}</div>`;
+      ${items.map((a) => {
+        const d = daysSince(a.enviada_em);
+        const when = a.enviada_em && k !== "preparacao" ? `enviada ${fmtDate(a.enviada_em)}${d > 0 ? ` · há ${d} dia${d > 1 ? "s" : ""}` : " · hoje"}` : "";
+        return `<div class="app-card${needsFollowUp(a) ? " follow" : ""}" draggable="true" data-id="${a.id}" tabindex="0" role="button" aria-label="Detalhes de ${esc(a.cargo)} em ${esc(a.empresa)}">
+          <strong>${esc(a.cargo)}</strong>${esc(a.empresa)}
+          ${when ? `<div class="when">${when}</div>` : ""}
+          ${needsFollowUp(a) ? `<div class="follow-tag">Hora de fazer follow-up</div>` : ""}
+          ${a.notas ? `<div class="note">${esc(a.notas.split("\n")[0].slice(0, 90))}</div>` : ""}
+          <div class="meta">${a.compatibilidade != null ? `<span class="pill">${a.compatibilidade}%</span>` : "<span></span>"}
+            ${a.link ? `<a href="${esc(a.link)}" target="_blank" rel="noopener">ver vaga</a>` : ""}</div>
+        </div>`;
+      }).join("")}</div>`;
   }).join("");
 }
 const kb = $("#kanban");
@@ -993,32 +1024,78 @@ kb.addEventListener("drop", async (e) => {
   const a = apps.find((x) => String(x.id) === id);
   if (!a || a.status === col.dataset.status) return;
   a.status = col.dataset.status; renderKanban();
-  await api(`/api/candidaturas/${id}`, { method: "PATCH", body: { status: a.status }, silent: true }).catch(loadApps);
+  try { Object.assign(a, await api(`/api/candidaturas/${id}`, { method: "PATCH", body: { status: a.status }, silent: true })); renderKanban(); }
+  catch { loadApps(); }
 });
-kb.addEventListener("click", async (e) => {
-  const { open, rm } = e.target.dataset;
-  if (rm) {
-    e.preventDefault();
-    if (!confirm("Remover candidatura?")) return;
-    await api(`/api/candidaturas/${rm}`, { method: "DELETE", silent: true }); loadApps();
-  } else if (open) {
-    // carrega a vaga + versões salvas nas abas de adaptação e carta
-    e.preventDefault();
-    const a = apps.find((x) => String(x.id) === open);
-    state.job = { empresa: a.empresa, cargo: a.cargo, link: a.link, vaga: a.vaga, pais: state.job.pais || "br" };
-    for (const [id, key] of Object.entries(jobFields)) $("#job-" + id).value = state.job[key] || "";
-    state.tailored = a.curriculo; state.cover = a.carta; save();
-    if (a.curriculo) renderResume(a.curriculo, $("#preview-tailored"));
-    if (a.carta) renderCover(a.carta);
-    $("#tailor-out").innerHTML = "";
-    switchTab("adaptar");
-  }
+kb.addEventListener("click", (e) => {
+  if (e.target.closest("a")) return; // link da vaga
+  const card = e.target.closest(".app-card");
+  if (card) openAppDialog(apps.find((x) => String(x.id) === card.dataset.id));
 });
-$("#btn-new-app").onclick = async () => {
-  const empresa = prompt("Empresa:"); if (!empresa) return;
-  const cargo = prompt("Cargo:"); if (!cargo) return;
-  await api("/api/candidaturas", { body: { empresa, cargo }, silent: true }); loadApps();
-};
+kb.addEventListener("keydown", (e) => {
+  const card = e.target.closest(".app-card");
+  if (card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); card.click(); }
+});
+$("#btn-new-app").onclick = () => openAppDialog(null);
+
+// carrega a vaga + versões salvas nas abas de adaptação, carta e entrevista
+function loadApplication(a, tab = "adaptar") {
+  state.job = { empresa: a.empresa, cargo: a.cargo, link: a.link, vaga: a.vaga, pais: state.job.pais || "br" };
+  for (const [id, key] of Object.entries(jobFields)) $("#job-" + id).value = state.job[key] || "";
+  state.tailored = a.curriculo; state.cover = a.carta; state.lastTailor = null; save();
+  if (a.curriculo) renderResume(a.curriculo, $("#preview-tailored"));
+  if (a.carta) renderCover(a.carta);
+  $("#tailor-out").innerHTML = "";
+  renderInterview();
+  switchTab(tab);
+}
+
+function openAppDialog(a) {
+  const d = $("#app-dlg");
+  const isNew = !a;
+  a = a || { empresa: state.job.empresa || "", cargo: state.job.cargo || "", link: state.job.link || "", status: "preparacao", enviada_em: "", notas: "" };
+  d.innerHTML = `
+    <form id="app-form">
+      <h3>${isNew ? "Nova candidatura" : "Candidatura"}</h3>
+      <div class="grid2">
+        <label>Empresa<input name="empresa" required value="${esc(a.empresa)}" /></label>
+        <label>Cargo<input name="cargo" required value="${esc(a.cargo)}" /></label>
+      </div>
+      <label>Link da vaga<input name="link" type="url" placeholder="https://..." value="${esc(a.link || "")}" /></label>
+      <div class="grid2">
+        <label>Etapa<select name="status">${COLS.map(([k, l]) => `<option value="${k}"${a.status === k ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label>Data de envio<input name="enviada_em" type="date" value="${esc(a.enviada_em || "")}" /></label>
+      </div>
+      <label>Notas<textarea name="notas" rows="4" placeholder="Contato do recrutador, salário combinado, próximos passos...">${esc(a.notas || "")}</textarea></label>
+      ${isNew ? "" : `<div class="row app-dlg-links">
+        ${a.vaga ? `<button type="button" class="link-btn" data-go="adaptar">Abrir vaga e currículo adaptado</button>
+        <button type="button" class="link-btn" data-go="entrevista">Preparar entrevista</button>` : `<span class="muted">Sem descrição da vaga salva.</span>`}
+      </div>`}
+      <div class="row between">
+        ${isNew ? "<span></span>" : `<button type="button" class="btn ghost danger" data-del>Excluir</button>`}
+        <div class="row"><button type="button" class="btn ghost" data-close>Cancelar</button><button class="btn" type="submit">Salvar</button></div>
+      </div>
+    </form>`;
+  d.onclick = async (e) => {
+    const b = e.target.closest("button");
+    if (!b || b.type === "submit") return;
+    if ("close" in b.dataset) return d.close();
+    if (b.dataset.go) { d.close(); return loadApplication(a, b.dataset.go); }
+    if ("del" in b.dataset) {
+      if (!b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Confirmar exclusão"; return; }
+      await api(`/api/candidaturas/${a.id}`, { method: "DELETE", silent: true });
+      d.close(); toast("Candidatura excluída"); loadApps();
+    }
+  };
+  $("#app-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = Object.fromEntries(new FormData(e.target));
+    if (isNew) await api("/api/candidaturas", { body, silent: true });
+    else await api(`/api/candidaturas/${a.id}`, { method: "PATCH", body, silent: true });
+    d.close(); toast(isNew ? "Candidatura criada" : "Candidatura salva"); loadApps();
+  };
+  d.showModal();
+}
 
 // ---------- backup (currículo e aparência ficam no navegador; candidaturas no SQLite) ----------
 const BACKUP_KEYS = ["resume", "tailored", "job", "cover", "template", "custom", "interview"];
